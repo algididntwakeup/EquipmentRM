@@ -21,13 +21,16 @@ import (
 )
 
 func main() {
-	// Docker/production environment variables take precedence over local .env files.
+	// Environment dari Docker/production selalu menang; file .env hanya menjadi
+	// fallback agar backend tetap mudah dijalankan langsung dari folder project.
 	if err := godotenv.Load(".env"); err != nil {
 		if errLoad := godotenv.Load("../../.env"); errLoad != nil {
 			log.Println("Note: .env file not found or error loading, using system environment variables")
 		}
 	}
 
+	// Batasi proses koneksi awal supaya aplikasi tidak menggantung tanpa batas
+	// ketika PostgreSQL salah konfigurasi atau belum siap.
 	connectContext, cancelConnect := context.WithTimeout(context.Background(), 10*time.Second)
 	database, err := db.InitDB(connectContext)
 	cancelConnect()
@@ -37,12 +40,17 @@ func main() {
 	defer database.Close()
 	log.Println("Database connection established successfully")
 
+	// Dependency dirangkai dari layer paling luar ke dalam:
+	// HTTP handler -> business service -> PostgreSQL repository.
 	eqRepo := repository.NewEquipmentRepository(database)
 	eqService := service.NewEquipmentService(eqRepo)
 	eqHandler := handler.NewEquipmentHandler(eqService)
 
 	router := gin.Default()
 	allowedOrigins := configuredOrigins(os.Getenv("CORS_ALLOWED_ORIGINS"))
+	// Middleware CORS hanya memantulkan origin yang tercantum di konfigurasi.
+	// Request dari origin lain tetap diproses, tetapi browser tidak diberi izin
+	// untuk membaca responsnya.
 	router.Use(func(c *gin.Context) {
 		origin := c.GetHeader("Origin")
 		if allowedOrigins[origin] {
@@ -53,6 +61,7 @@ func main() {
 		c.Header("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		c.Header("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE")
 
+		// Preflight OPTIONS tidak perlu diteruskan ke handler endpoint.
 		if c.Request.Method == http.MethodOptions {
 			c.AbortWithStatus(http.StatusNoContent)
 			return
@@ -70,6 +79,8 @@ func main() {
 		})
 	})
 	router.GET("/health", func(c *gin.Context) {
+		// Health check ikut melakukan ping database agar status healthy berarti
+		// API dan dependency utamanya sama-sama dapat digunakan.
 		pingContext, cancelPing := context.WithTimeout(c.Request.Context(), 2*time.Second)
 		defer cancelPing()
 		if err := database.PingContext(pingContext); err != nil {
@@ -98,6 +109,7 @@ func main() {
 		port = "8080"
 	}
 
+	// Timeout HTTP mencegah koneksi lambat menahan resource server terlalu lama.
 	server := &http.Server{
 		Addr:              ":" + port,
 		Handler:           router,
@@ -113,6 +125,8 @@ func main() {
 		serverErrors <- server.ListenAndServe()
 	}()
 
+	// Tunggu SIGINT/SIGTERM lalu hentikan server secara graceful supaya request
+	// yang sedang berjalan diberi kesempatan untuk selesai.
 	shutdownSignals := make(chan os.Signal, 1)
 	signal.Notify(shutdownSignals, os.Interrupt, syscall.SIGTERM)
 
@@ -130,6 +144,8 @@ func main() {
 	}
 }
 
+// configuredOrigins mengubah daftar origin yang dipisahkan koma menjadi lookup
+// map agar pengecekan CORS pada setiap request tetap sederhana dan cepat.
 func configuredOrigins(rawOrigins string) map[string]bool {
 	if strings.TrimSpace(rawOrigins) == "" {
 		rawOrigins = "http://localhost:3000"

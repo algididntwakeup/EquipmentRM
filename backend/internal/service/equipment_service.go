@@ -12,20 +12,25 @@ import (
 )
 
 var (
+	// Error sentinel memungkinkan handler membedakan kegagalan validasi/not found
+	// dari error internal tanpa membandingkan teks pesan error.
 	ErrValidation = errors.New("validation failed")
 	ErrNotFound   = repository.ErrNotFound
 )
 
+// Map dipakai sebagai set agar pengecekan status valid berlangsung O(1).
 var allowedStatuses = map[string]struct{}{
 	"Aktif":           {},
 	"Dalam Perbaikan": {},
 	"Non-Aktif":       {},
 }
 
+// EquipmentService mendefinisikan seluruh use case equipment. Handler hanya
+// bergantung pada kontrak ini, bukan pada implementasi database.
 type EquipmentService interface {
 	Create(ctx context.Context, input model.EquipmentInput) (*model.Equipment, map[string]string, error)
 	GetByID(ctx context.Context, id string) (*model.Equipment, error)
-	GetAll(ctx context.Context, statusFilter string, page, limit int) ([]model.Equipment, model.PaginationMeta, error)
+	GetAll(ctx context.Context, statusFilter, search string, page, limit int) ([]model.Equipment, model.PaginationMeta, error)
 	Update(ctx context.Context, id string, input model.EquipmentInput) (*model.Equipment, map[string]string, error)
 	Delete(ctx context.Context, id string) error
 }
@@ -34,11 +39,13 @@ type equipmentService struct {
 	repo repository.EquipmentRepository
 }
 
-// NewEquipmentService constructs a new EquipmentService instance.
+// NewEquipmentService membuat service dengan repository yang diberikan.
 func NewEquipmentService(repo repository.EquipmentRepository) EquipmentService {
 	return &equipmentService{repo: repo}
 }
 
+// ValidateInput memusatkan aturan bisnis create/update sehingga validasi yang
+// sama tidak perlu diduplikasi di setiap handler.
 func (s *equipmentService) ValidateInput(input model.EquipmentInput) (model.Date, map[string]string) {
 	valErrors := make(map[string]string)
 
@@ -74,6 +81,8 @@ func (s *equipmentService) ValidateInput(input model.EquipmentInput) (model.Date
 	return parsedDate, valErrors
 }
 
+// Create memvalidasi payload, membersihkan whitespace, membuat UUID, lalu
+// menyerahkan proses penyimpanan ke repository.
 func (s *equipmentService) Create(ctx context.Context, input model.EquipmentInput) (*model.Equipment, map[string]string, error) {
 	parsedDate, valErrors := s.ValidateInput(input)
 	if len(valErrors) > 0 {
@@ -96,13 +105,19 @@ func (s *equipmentService) Create(ctx context.Context, input model.EquipmentInpu
 	return eq, nil, nil
 }
 
+// GetByID meneruskan pengambilan detail ke repository.
 func (s *equipmentService) GetByID(ctx context.Context, id string) (*model.Equipment, error) {
 	return s.repo.GetByID(ctx, id)
 }
 
-func (s *equipmentService) GetAll(ctx context.Context, statusFilter string, page, limit int) ([]model.Equipment, model.PaginationMeta, error) {
+// GetAll menormalisasi filter/search dan menghitung metadata pagination dari
+// total data yang dikembalikan repository.
+func (s *equipmentService) GetAll(ctx context.Context, statusFilter, search string, page, limit int) ([]model.Equipment, model.PaginationMeta, error) {
 	statusFilter = strings.TrimSpace(statusFilter)
+	search = strings.TrimSpace(search)
 	if statusFilter == "All" {
+		// "All" dipertahankan untuk kompatibilitas client, lalu diubah menjadi
+		// filter kosong sebelum mencapai query database.
 		statusFilter = ""
 	}
 	if statusFilter != "" && !isAllowedStatus(statusFilter) {
@@ -110,6 +125,8 @@ func (s *equipmentService) GetAll(ctx context.Context, statusFilter string, page
 	}
 
 	if page < 1 {
+		// Guard tambahan untuk caller non-HTTP; handler sendiri sudah menolak
+		// pagination yang tidak valid.
 		page = 1
 	}
 	if limit < 1 || limit > 100 {
@@ -117,13 +134,14 @@ func (s *equipmentService) GetAll(ctx context.Context, statusFilter string, page
 	}
 
 	offset := (page - 1) * limit
-	items, totalItems, err := s.repo.GetAll(ctx, statusFilter, limit, offset)
+	items, totalItems, err := s.repo.GetAll(ctx, statusFilter, search, limit, offset)
 	if err != nil {
 		return nil, model.PaginationMeta{}, err
 	}
 
 	totalPages := int(math.Ceil(float64(totalItems) / float64(limit)))
 	if totalPages == 0 {
+		// Frontend tetap memakai halaman 1 ketika hasil pencarian kosong.
 		totalPages = 1
 	}
 
@@ -137,6 +155,8 @@ func (s *equipmentService) GetAll(ctx context.Context, statusFilter string, page
 	return items, meta, nil
 }
 
+// Update memvalidasi payload lebih dahulu, memastikan record masih ada, lalu
+// menerapkan perubahan melalui repository.
 func (s *equipmentService) Update(ctx context.Context, id string, input model.EquipmentInput) (*model.Equipment, map[string]string, error) {
 	parsedDate, valErrors := s.ValidateInput(input)
 	if len(valErrors) > 0 {
@@ -161,10 +181,12 @@ func (s *equipmentService) Update(ctx context.Context, id string, input model.Eq
 	return existing, nil, nil
 }
 
+// Delete menyerahkan penghapusan dan propagasi ErrNotFound ke repository.
 func (s *equipmentService) Delete(ctx context.Context, id string) error {
 	return s.repo.Delete(ctx, id)
 }
 
+// isAllowedStatus mengecek membership pada set status yang diizinkan PRD.
 func isAllowedStatus(status string) bool {
 	_, ok := allowedStatuses[status]
 	return ok

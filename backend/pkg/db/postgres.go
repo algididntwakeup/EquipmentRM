@@ -12,7 +12,8 @@ import (
 	_ "github.com/lib/pq"
 )
 
-// InitDB initializes and verifies a PostgreSQL connection pool using sqlx.
+// InitDB membuat connection pool PostgreSQL dari environment dan langsung
+// memverifikasi koneksi melalui sqlx.ConnectContext.
 func InitDB(ctx context.Context) (*sqlx.DB, error) {
 	host := envOrDefault("DB_HOST", "localhost")
 	port := envOrDefault("DB_PORT", "5432")
@@ -25,6 +26,8 @@ func InitDB(ctx context.Context) (*sqlx.DB, error) {
 		return nil, fmt.Errorf("DB_USER dan DB_NAME wajib dikonfigurasi")
 	}
 
+	// url.URL memastikan karakter khusus pada username/password di-encode dengan
+	// benar, tidak dirangkai manual menjadi connection string yang rapuh.
 	dsn := url.URL{
 		Scheme: "postgres",
 		User:   url.UserPassword(user, password),
@@ -40,6 +43,8 @@ func InitDB(ctx context.Context) (*sqlx.DB, error) {
 		return nil, fmt.Errorf("connect PostgreSQL %s@%s/%s: %w", user, dsn.Host, databaseName, err)
 	}
 
+	// Batas pool menjaga API tetap responsif tanpa membuka koneksi database secara
+	// tidak terkendali ketika banyak request datang bersamaan.
 	database.SetMaxOpenConns(25)
 	database.SetMaxIdleConns(10)
 	database.SetConnMaxLifetime(30 * time.Minute)
@@ -48,6 +53,8 @@ func InitDB(ctx context.Context) (*sqlx.DB, error) {
 	return database, nil
 }
 
+// envOrDefault membaca environment variable dan memakai nilai default hanya
+// ketika variable tersebut benar-benar kosong.
 func envOrDefault(key, defaultValue string) string {
 	if value := os.Getenv(key); value != "" {
 		return value

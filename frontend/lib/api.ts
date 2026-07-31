@@ -85,6 +85,7 @@ export async function getEquipmentList(
     page?: number;
     limit?: number;
     status?: EquipmentStatus | '';
+    search?: string;
     signal?: AbortSignal;
   } = {},
 ): Promise<EquipmentListResponse> {
@@ -94,6 +95,9 @@ export async function getEquipmentList(
   });
   if (options.status) {
     query.set('status', options.status);
+  }
+  if (options.search?.trim()) {
+    query.set('search', options.search.trim());
   }
 
   const response = await request<Equipment[]>(`/equipment?${query}`, {

@@ -19,7 +19,9 @@ import (
 )
 
 type equipmentRepositoryStub struct {
-	created *model.Equipment
+	created      *model.Equipment
+	statusFilter string
+	search       string
 }
 
 func (r *equipmentRepositoryStub) Create(_ context.Context, equipment *model.Equipment) error {
@@ -34,7 +36,9 @@ func (r *equipmentRepositoryStub) GetByID(context.Context, string) (*model.Equip
 	return nil, repository.ErrNotFound
 }
 
-func (r *equipmentRepositoryStub) GetAll(context.Context, string, int, int) ([]model.Equipment, int, error) {
+func (r *equipmentRepositoryStub) GetAll(_ context.Context, statusFilter, search string, _, _ int) ([]model.Equipment, int, error) {
+	r.statusFilter = statusFilter
+	r.search = search
 	return []model.Equipment{}, 0, nil
 }
 
@@ -122,4 +126,17 @@ func TestGetAllRejectsInvalidPagination(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, response.Code)
 	assert.Contains(t, response.Body.String(), `"code":"VALIDATION_ERROR"`)
+}
+
+func TestGetAllForwardsTrimmedSearchAndStatus(t *testing.T) {
+	repo := &equipmentRepositoryStub{}
+	router := setupEquipmentRouter(repo)
+	request := httptest.NewRequest(http.MethodGet, "/equipment?status=Aktif&search=%20pressure%20", nil)
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusOK, response.Code)
+	assert.Equal(t, "Aktif", repo.statusFilter)
+	assert.Equal(t, "pressure", repo.search)
 }

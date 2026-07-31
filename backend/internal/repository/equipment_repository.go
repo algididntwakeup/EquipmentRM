@@ -5,18 +5,23 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jmoiron/sqlx"
 	"reksolindo-api/internal/model"
 )
 
+// ErrNotFound menjadi error bersama yang dapat diterjemahkan service/handler
+// menjadi HTTP 404 tanpa membocorkan detail database.
 var ErrNotFound = errors.New("equipment not found")
 
+// EquipmentRepository mendefinisikan operasi persistence yang dibutuhkan
+// service. Interface ini membuat business logic mudah diuji memakai stub/mock.
 type EquipmentRepository interface {
 	Create(ctx context.Context, eq *model.Equipment) error
 	GetByID(ctx context.Context, id string) (*model.Equipment, error)
-	GetAll(ctx context.Context, statusFilter string, limit, offset int) ([]model.Equipment, int, error)
+	GetAll(ctx context.Context, statusFilter, search string, limit, offset int) ([]model.Equipment, int, error)
 	Update(ctx context.Context, id string, eq *model.Equipment) error
 	Delete(ctx context.Context, id string) error
 }
@@ -25,11 +30,12 @@ type equipmentRepository struct {
 	db *sqlx.DB
 }
 
-// NewEquipmentRepository constructs a new sqlx-backed EquipmentRepository.
+// NewEquipmentRepository membuat implementasi repository berbasis sqlx.
 func NewEquipmentRepository(db *sqlx.DB) EquipmentRepository {
 	return &equipmentRepository{db: db}
 }
 
+// Create menyimpan equipment baru dan menetapkan timestamp dari server.
 func (r *equipmentRepository) Create(ctx context.Context, eq *model.Equipment) error {
 	query := `
 		INSERT INTO equipment (id, nama_equipment, tipe_equipment, lokasi, tanggal_inspeksi_terakhir, status, created_at, updated_at)
@@ -52,6 +58,8 @@ func (r *equipmentRepository) Create(ctx context.Context, eq *model.Equipment) e
 	return err
 }
 
+// GetByID mengambil satu equipment dan menormalkan sql.ErrNoRows menjadi
+// repository.ErrNotFound yang dipahami layer di atasnya.
 func (r *equipmentRepository) GetByID(ctx context.Context, id string) (*model.Equipment, error) {
 	query := `
 		SELECT id, nama_equipment, tipe_equipment, lokasi, tanggal_inspeksi_terakhir, status, created_at, updated_at
@@ -69,7 +77,9 @@ func (r *equipmentRepository) GetByID(ctx context.Context, id string) (*model.Eq
 	return &eq, nil
 }
 
-func (r *equipmentRepository) GetAll(ctx context.Context, statusFilter string, limit, offset int) ([]model.Equipment, int, error) {
+// GetAll menjalankan filter, live search, dan pagination di database agar hasil
+// pencarian tidak terbatas pada data yang kebetulan tampil di halaman frontend.
+func (r *equipmentRepository) GetAll(ctx context.Context, statusFilter, search string, limit, offset int) ([]model.Equipment, int, error) {
 	var items []model.Equipment
 	var total int
 
@@ -79,38 +89,62 @@ func (r *equipmentRepository) GetAll(ctx context.Context, statusFilter string, l
 		FROM equipment
 	`
 
+	var conditions []string
 	var args []interface{}
+	// Placeholder PostgreSQL ($1, $2, ...) dibuat dinamis, tetapi semua nilai
+	// tetap dikirim sebagai parameter sehingga tidak membuka SQL injection.
 	if statusFilter != "" && statusFilter != "All" {
-		countQuery += " WHERE status = $1"
-		selectQuery += " WHERE status = $1"
 		args = append(args, statusFilter)
+		conditions = append(conditions, fmt.Sprintf("status = $%d", len(args)))
+	}
 
-		selectQuery += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
-		argsWithPaging := append(args, limit, offset)
+	if search != "" {
+		// ILIKE membuat pencarian case-insensitive pada tiga kolom bisnis utama.
+		args = append(args, "%"+escapeLikePattern(search)+"%")
+		placeholder := fmt.Sprintf("$%d", len(args))
+		conditions = append(conditions, fmt.Sprintf(
+			"(nama_equipment ILIKE %s ESCAPE E'\\\\' OR tipe_equipment ILIKE %s ESCAPE E'\\\\' OR lokasi ILIKE %s ESCAPE E'\\\\')",
+			placeholder,
+			placeholder,
+			placeholder,
+		))
+	}
 
-		if err := r.db.GetContext(ctx, &total, countQuery, statusFilter); err != nil {
-			return nil, 0, err
-		}
-		if err := r.db.SelectContext(ctx, &items, selectQuery, argsWithPaging...); err != nil {
-			return nil, 0, err
-		}
-	} else {
-		selectQuery += " ORDER BY created_at DESC LIMIT $1 OFFSET $2"
-		if err := r.db.GetContext(ctx, &total, countQuery); err != nil {
-			return nil, 0, err
-		}
-		if err := r.db.SelectContext(ctx, &items, selectQuery, limit, offset); err != nil {
-			return nil, 0, err
-		}
+	if len(conditions) > 0 {
+		// WHERE yang sama dipakai oleh query COUNT dan SELECT agar metadata
+		// pagination selalu sesuai dengan data yang ditampilkan.
+		whereClause := " WHERE " + strings.Join(conditions, " AND ")
+		countQuery += whereClause
+		selectQuery += whereClause
+	}
+
+	// Hitung total sebelum LIMIT/OFFSET untuk menentukan jumlah halaman.
+	if err := r.db.GetContext(ctx, &total, countQuery, args...); err != nil {
+		return nil, 0, err
+	}
+
+	selectQuery += fmt.Sprintf(" ORDER BY created_at DESC LIMIT $%d OFFSET $%d", len(args)+1, len(args)+2)
+	argsWithPaging := append(append([]interface{}{}, args...), limit, offset)
+	if err := r.db.SelectContext(ctx, &items, selectQuery, argsWithPaging...); err != nil {
+		return nil, 0, err
 	}
 
 	if items == nil {
+		// API mengembalikan [] alih-alih null agar lebih mudah dikonsumsi frontend.
 		items = []model.Equipment{}
 	}
 
 	return items, total, nil
 }
 
+// escapeLikePattern memperlakukan %, _, dan backslash sebagai karakter literal,
+// bukan wildcard buatan pengguna pada ekspresi SQL LIKE/ILIKE.
+func escapeLikePattern(value string) string {
+	replacer := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+	return replacer.Replace(value)
+}
+
+// Update memperbarui field yang dikelola pengguna dan timestamp updated_at.
 func (r *equipmentRepository) Update(ctx context.Context, id string, eq *model.Equipment) error {
 	query := `
 		UPDATE equipment
@@ -138,12 +172,15 @@ func (r *equipmentRepository) Update(ctx context.Context, id string, eq *model.E
 		return err
 	}
 	if rows == 0 {
+		// UPDATE yang tidak mengenai baris apa pun berarti ID tidak ditemukan.
 		return ErrNotFound
 	}
 
 	return nil
 }
 
+// Delete menghapus equipment berdasarkan ID dan melaporkan not found secara
+// eksplisit ketika tidak ada baris yang terhapus.
 func (r *equipmentRepository) Delete(ctx context.Context, id string) error {
 	query := "DELETE FROM equipment WHERE id = $1"
 	res, err := r.db.ExecContext(ctx, query, id)

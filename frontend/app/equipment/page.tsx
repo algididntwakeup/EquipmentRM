@@ -28,6 +28,8 @@ export default function EquipmentListPage() {
   const [equipment, setEquipment] = useState<Equipment[]>([]);
   const [pagination, setPagination] = useState<PaginationMeta>(emptyPagination);
   const [status, setStatus] = useState<EquipmentStatusFilter>('All');
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
   const [sortField, setSortField] = useState<SortField>('nama_equipment');
@@ -39,12 +41,27 @@ export default function EquipmentListPage() {
   const [reloadToken, setReloadToken] = useState(0);
 
   useEffect(() => {
+    const normalizedSearch = search.trim();
+    if (normalizedSearch === debouncedSearch) return;
+
+    const timeout = window.setTimeout(() => {
+      setLoading(true);
+      setError('');
+      setPage(1);
+      setDebouncedSearch(normalizedSearch);
+    }, 350);
+
+    return () => window.clearTimeout(timeout);
+  }, [debouncedSearch, search]);
+
+  useEffect(() => {
     const controller = new AbortController();
 
     getEquipmentList({
       page,
       limit,
       status: status === 'All' ? '' : status,
+      search: debouncedSearch,
       signal: controller.signal,
     })
       .then((response) => {
@@ -61,7 +78,9 @@ export default function EquipmentListPage() {
       });
 
     return () => controller.abort();
-  }, [limit, page, reloadToken, status]);
+  }, [debouncedSearch, limit, page, reloadToken, status]);
+
+  const isSearchPending = search.trim() !== debouncedSearch;
 
   const sortedEquipment = useMemo(() => {
     return [...equipment].sort((left, right) => {
@@ -126,8 +145,46 @@ export default function EquipmentListPage() {
         </Link>
       </div>
 
-      <div className="bg-surface rounded-xl p-4 border border-outline-variant shadow-sm mb-4 flex flex-col sm:flex-row gap-3 sm:items-end">
-        <div className="flex-1">
+      <div className="bg-surface rounded-xl p-4 border border-outline-variant shadow-sm mb-4 flex flex-col md:flex-row gap-3 md:items-end">
+        <div className="md:flex-[1.5]">
+          <label htmlFor="equipment-search" className="block text-xs font-semibold text-on-surface-variant mb-1.5">
+            Cari equipment
+          </label>
+          <div className="relative">
+            <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-lg text-on-surface-variant" aria-hidden="true">
+              search
+            </span>
+            <input
+              id="equipment-search"
+              type="search"
+              value={search}
+              maxLength={100}
+              autoComplete="off"
+              placeholder="Nama, tipe, atau lokasi..."
+              onChange={(event) => setSearch(event.target.value)}
+              className="w-full rounded-lg border border-outline-variant bg-surface-container-lowest py-2.5 pl-10 pr-20 text-sm focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20"
+            />
+            {isSearchPending && (
+              <span
+                className={`material-symbols-outlined absolute ${search ? 'right-10' : 'right-3'} top-1/2 -translate-y-1/2 animate-spin text-lg text-primary`}
+                aria-label="Menunggu pencarian"
+              >
+                progress_activity
+              </span>
+            )}
+            {search && (
+              <button
+                type="button"
+                onClick={() => setSearch('')}
+                className="absolute right-1.5 top-1/2 -translate-y-1/2 rounded-md p-1 text-on-surface-variant hover:bg-surface-container-high hover:text-on-surface focus:outline-none focus:ring-2 focus:ring-primary/30"
+                aria-label="Hapus kata pencarian"
+              >
+                <span className="material-symbols-outlined text-lg" aria-hidden="true">close</span>
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="md:flex-1">
           <label htmlFor="equipment-status" className="block text-xs font-semibold text-on-surface-variant mb-1.5">
             Filter status
           </label>
@@ -146,7 +203,7 @@ export default function EquipmentListPage() {
             {EQUIPMENT_STATUSES.map((value) => <option key={value} value={value}>{value}</option>)}
           </select>
         </div>
-        <div className="sm:w-40">
+        <div className="md:w-40 md:flex-none">
           <label htmlFor="page-limit" className="block text-xs font-semibold text-on-surface-variant mb-1.5">
             Data per halaman
           </label>
@@ -205,11 +262,18 @@ export default function EquipmentListPage() {
           }}
         />
       ) : sortedEquipment.length === 0 ? (
-        <StatePanel type="empty" message="Belum ada data untuk filter yang dipilih." />
+        <StatePanel
+          type="empty"
+          message={debouncedSearch
+            ? `Tidak ada equipment yang cocok dengan “${debouncedSearch}”.`
+            : 'Belum ada data untuk filter yang dipilih.'}
+        />
       ) : (
         <>
-          <p className="mb-3 text-xs text-on-surface-variant">
-            Kolom tabel dapat diurutkan untuk data pada halaman ini.
+          <p className="mb-3 text-xs text-on-surface-variant" role="status" aria-live="polite">
+            {debouncedSearch
+              ? `${pagination.total_items} hasil untuk “${debouncedSearch}”. Kolom tabel dapat diurutkan untuk halaman ini.`
+              : 'Kolom tabel dapat diurutkan untuk data pada halaman ini.'}
           </p>
           <EquipmentTable
             items={sortedEquipment}

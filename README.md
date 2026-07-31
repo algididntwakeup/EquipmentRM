@@ -1,36 +1,57 @@
-# Reksolindo Equipment Inventory
+# Reksolindo Equipment Inventory (EquipmentRM)
 
-Aplikasi web inventaris equipment untuk platform **Asset Reliability Management (ARM)**. Aplikasi ini membantu tim mencatat aset, melihat kondisi equipment, memperbarui data, memfilter status, dan menghapus data yang sudah tidak diperlukan.
+Aplikasi web inventaris equipment untuk platform **Asset Reliability Management (ARM)** Reksolindo. Aplikasi ini membantu tim mencatat aset industri, melihat kondisi & status inspeksi equipment, memperbarui data, memfilter status, mengurutkan data, serta menghapus data inventaris.
 
-Implementasi mengikuti [PRD Equipment Inventory](docs/PRD_Equipment_Inventory_Reksolindo%20%281%29.md), dengan frontend Next.js, REST API Go, database PostgreSQL, migrasi otomatis, dan Docker Compose agar reviewer dapat menjalankan seluruh aplikasi dengan satu perintah.
+Repository GitHub: **[EquipmentRM](https://github.com/algididntwakeup/EquipmentRM)**
 
-## Panduan cepat untuk HR atau reviewer non-teknis
+Implementasi mengikuti spesifikasi pada [PRD Equipment Inventory](docs/PRD_Equipment_Inventory_Reksolindo%20%281%29.md), dibangun menggunakan stack **Next.js (App Router)**, **REST API Go (Gin & sqlx)**, **PostgreSQL 15**, dan ter-containerize penuh dengan **Docker Compose** agar reviewer/developer dapat menjalankan seluruh sistem dengan satu perintah.
 
-Bagian ini adalah cara termudah untuk mencoba aplikasi. Anda **tidak perlu memasang Go, Node.js, atau PostgreSQL** secara terpisah.
+---
 
-### 1. Yang perlu disiapkan
+## 🚀 Panduan Clone Repository & Menjalankan Aplikasi
 
-- Laptop Windows, macOS, atau Linux.
-- Koneksi internet saat pertama kali menjalankan aplikasi.
+### 1. Cara Clone Repository dari GitHub
+
+Buka terminal (Git Bash, PowerShell, Command Prompt, atau Terminal macOS/Linux) dan jalankan:
+
+```bash
+git clone https://github.com/algididntwakeup/EquipmentRM.git
+cd EquipmentRM
+```
+
+### 2. Panduan Cepat untuk Reviewer / Non-Teknis
+
+Bagian ini adalah cara termudah untuk mencoba aplikasi. Anda **tidak perlu memasang Go, Node.js, atau PostgreSQL** secara terpisah di mesin lokal.
+
+#### A. Yang Perlu Disiapkan
+
+- Laptop / PC dengan OS Windows, macOS, atau Linux.
 - Browser modern seperti Chrome, Edge, atau Firefox.
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) yang sudah terpasang dan sedang berjalan.
-- Folder source code ini, baik dari Git maupun berkas ZIP yang sudah diekstrak.
-- Port `3000`, `8080`, dan `5433` sebaiknya tidak sedang digunakan aplikasi lain.
+- Port `3000` (Web), `8080` (API), dan `5433` (PostgreSQL) sebaiknya tidak sedang digunakan aplikasi lain.
 
-Untuk Windows, setelah memasang Docker Desktop, buka aplikasinya dan tunggu sampai status Docker menunjukkan bahwa engine sudah berjalan. Jika Docker meminta aktivasi WSL 2 atau restart, ikuti petunjuk yang muncul terlebih dahulu.
+Untuk Windows, buka aplikasi Docker Desktop dan pastikan ikonisnya menunjukkan status *Engine running*.
 
-### 2. Buka terminal di folder proyek
+#### B. Menjalankan Seluruh Aplikasi
 
-Di Windows:
+Pastikan terminal Anda berada di dalam folder `EquipmentRM` yang berisi file `docker-compose.yml`.
 
-1. Buka folder proyek `takehomet-arm` melalui File Explorer.
-2. Klik kanan area kosong di dalam folder.
-3. Pilih **Open in Terminal** atau **Open PowerShell window here**.
+Jalankan perintah berikut untuk menyiapkan konfigurasi environment bawaan:
 
-Pastikan terminal berada di folder yang berisi `docker-compose.yml`. Anda dapat memeriksanya dengan:
-
+**Windows (PowerShell):**
 ```powershell
-Get-ChildItem
+Copy-Item .env.example .env
+```
+
+**macOS / Linux:**
+```bash
+cp .env.example .env
+```
+
+Kemudian jalankan seluruh container (Database, API, Web, dan Migrasi Otomatis):
+
+```bash
+docker compose up -d --build
 ```
 
 ### 3. Pastikan Docker siap
@@ -126,10 +147,12 @@ Skenario berikut dapat digunakan oleh HR, reviewer, QA, atau pengguna yang belum
 
 1. Kembali ke daftar equipment.
 2. Pastikan equipment tadi muncul.
-3. Pilih filter status **Aktif** dan pastikan data tetap terlihat.
-4. Pilih status lain dan pastikan hasil menyesuaikan.
-5. Jika jumlah data lebih dari 10, gunakan tombol halaman berikutnya/sebelumnya untuk menguji pagination.
-6. Klik judul kolom yang dapat diurutkan untuk mencoba pengurutan data pada halaman aktif.
+3. Ketik sebagian nama, tipe, atau lokasi pada kotak **Cari equipment**. Hasil akan berubah otomatis setelah pengguna berhenti mengetik sejenak.
+4. Hapus kata pencarian dengan tombol **x** dan pastikan daftar lengkap kembali tampil.
+5. Pilih filter status **Aktif** dan pastikan data menyesuaikan.
+6. Gunakan pencarian dan filter status bersamaan untuk memastikan keduanya dapat dikombinasikan.
+7. Jika jumlah data lebih dari 10, gunakan tombol halaman berikutnya/sebelumnya untuk menguji pagination.
+8. Klik judul kolom yang dapat diurutkan untuk mencoba pengurutan data pada halaman aktif.
 
 ### D. Ubah equipment
 
@@ -280,7 +303,7 @@ Tekan `Ctrl+C` untuk berhenti mengikuti log. Container tetap berjalan karena seb
 ### Fitur yang sudah tersedia
 
 - Dashboard dengan ringkasan jumlah equipment berdasarkan data API.
-- Daftar equipment dengan pagination, filter status, dan pengurutan pada halaman aktif.
+- Daftar equipment dengan live search, pagination, filter status, dan pengurutan pada halaman aktif.
 - Tambah, lihat detail, ubah, dan hapus equipment.
 - Validasi form di frontend dan validasi request di backend.
 - Tampilan loading, data kosong, error jaringan, data tidak ditemukan, dan error validasi.
@@ -355,11 +378,12 @@ Parameter daftar:
 | `page` | `1` | Nomor halaman, minimal 1 |
 | `limit` | `10` | Jumlah data per halaman, 1-100 |
 | `status` | kosong | Filter salah satu status valid; penulisan harus sama |
+| `search` | kosong | Pencarian case-insensitive pada nama, tipe, dan lokasi |
 
 Contoh:
 
 ```text
-GET /equipment?page=1&limit=10&status=Aktif
+GET /equipment?page=1&limit=10&status=Aktif&search=pompa
 ```
 
 ### Contoh membuat equipment dari PowerShell
@@ -576,6 +600,7 @@ Pada implementasi saat ini, test backend, vet, build backend, lint frontend, Typ
 - Repository memakai query berparameter untuk mencegah SQL injection.
 - Format error dibuat konsisten agar frontend dapat menampilkan pesan yang tepat.
 - Pagination dan filter dijalankan di server untuk menjaga performa ketika data bertambah.
+- Live search menggunakan debounce 350 ms dan pencarian server-side pada nama, tipe, serta lokasi, sehingga hasil tidak terbatas pada halaman yang sedang tampil.
 - Tanggal equipment menggunakan format `YYYY-MM-DD` agar sesuai input bisnis dan tidak bergeser karena zona waktu browser.
 - Migrasi berjalan sebagai service satu kali sebelum API, sehingga reviewer tidak perlu membuat tabel secara manual.
 - Data PostgreSQL disimpan pada named volume agar tidak hilang ketika container dihentikan biasa.
@@ -585,6 +610,7 @@ Pada implementasi saat ini, test backend, vet, build backend, lint frontend, Typ
 - Belum ada autentikasi dan otorisasi; seluruh endpoint dapat diakses pada lingkungan yang menjalankan API.
 - Sorting saat ini berlaku pada data di halaman yang sedang tampil. Sorting server-side dapat ditambahkan untuk urutan global lintas halaman.
 - Ringkasan dashboard dihitung dari endpoint daftar. Endpoint agregasi khusus akan lebih efisien untuk volume data besar.
+- Pencarian menggunakan `ILIKE '%kata%'`. Untuk jutaan data, PostgreSQL trigram index atau full-text search akan lebih efisien.
 - Belum ada integration test dengan PostgreSQL sungguhan di pipeline CI.
 - Belum ada audit trail, soft delete, attachment, reminder maintenance, backup, observability, atau rate limiting.
 - Konfigurasi demo masih menggunakan secret berbasis `.env`; deployment produksi harus memakai secret manager, SSL database, reverse proxy HTTPS, dan kebijakan rotasi credential.

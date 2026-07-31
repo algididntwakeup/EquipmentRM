@@ -11,14 +11,18 @@ import (
 	"reksolindo-api/internal/service"
 )
 
+// EquipmentHandler menerjemahkan HTTP request/response ke pemanggilan use case
+// pada EquipmentService.
 type EquipmentHandler struct {
 	svc service.EquipmentService
 }
 
+// NewEquipmentHandler membuat handler dengan service yang sudah dirangkai.
 func NewEquipmentHandler(svc service.EquipmentService) *EquipmentHandler {
 	return &EquipmentHandler{svc: svc}
 }
 
+// RegisterRoutes mendaftarkan seluruh endpoint CRUD pada prefix /equipment.
 func (h *EquipmentHandler) RegisterRoutes(r *gin.Engine) {
 	api := r.Group("/equipment")
 	{
@@ -30,9 +34,11 @@ func (h *EquipmentHandler) RegisterRoutes(r *gin.Engine) {
 	}
 }
 
-// POST /equipment
+// Create menangani POST /equipment.
 func (h *EquipmentHandler) Create(c *gin.Context) {
 	var input model.EquipmentInput
+	// ShouldBindJSON hanya memeriksa bahwa body merupakan JSON yang dapat dipetakan;
+	// aturan field wajib dan enum status diperiksa di layer service.
 	if err := c.ShouldBindJSON(&input); err != nil {
 		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Input JSON tidak valid", nil)
 		return
@@ -54,8 +60,11 @@ func (h *EquipmentHandler) Create(c *gin.Context) {
 	})
 }
 
-// GET /equipment?page=1&limit=10&status=Aktif
+// GetAll menangani GET /equipment beserta pagination, status, dan live search.
+// Contoh: /equipment?page=1&limit=10&status=Aktif&search=pressure
 func (h *EquipmentHandler) GetAll(c *gin.Context) {
+	// Query pagination divalidasi di boundary HTTP agar client langsung menerima
+	// pesan 400 yang spesifik.
 	page, err := parsePositiveIntQuery(c, "page", 1, 0)
 	if err != nil {
 		writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Query pagination tidak valid", map[string]string{
@@ -72,8 +81,11 @@ func (h *EquipmentHandler) GetAll(c *gin.Context) {
 		return
 	}
 	statusFilter := c.Query("status")
+	search := c.Query("search")
 
-	items, meta, err := h.svc.GetAll(c.Request.Context(), statusFilter, page, limit)
+	// Service mengembalikan data dan metadata dari query yang sama sehingga total
+	// halaman selalu konsisten dengan filter/search aktif.
+	items, meta, err := h.svc.GetAll(c.Request.Context(), statusFilter, search, page, limit)
 	if err != nil {
 		if errors.Is(err, service.ErrValidation) {
 			writeError(c, http.StatusBadRequest, "VALIDATION_ERROR", "Filter status tidak valid", map[string]string{
@@ -92,7 +104,7 @@ func (h *EquipmentHandler) GetAll(c *gin.Context) {
 	})
 }
 
-// GET /equipment/:id
+// GetByID menangani GET /equipment/:id.
 func (h *EquipmentHandler) GetByID(c *gin.Context) {
 	id := c.Param("id")
 	eq, err := h.svc.GetByID(c.Request.Context(), id)
@@ -111,7 +123,7 @@ func (h *EquipmentHandler) GetByID(c *gin.Context) {
 	})
 }
 
-// PUT /equipment/:id
+// Update menangani PUT /equipment/:id dengan payload penuh seperti Create.
 func (h *EquipmentHandler) Update(c *gin.Context) {
 	id := c.Param("id")
 	var input model.EquipmentInput
@@ -140,7 +152,7 @@ func (h *EquipmentHandler) Update(c *gin.Context) {
 	})
 }
 
-// DELETE /equipment/:id
+// Delete menangani DELETE /equipment/:id.
 func (h *EquipmentHandler) Delete(c *gin.Context) {
 	id := c.Param("id")
 	err := h.svc.Delete(c.Request.Context(), id)
@@ -159,6 +171,8 @@ func (h *EquipmentHandler) Delete(c *gin.Context) {
 	})
 }
 
+// parsePositiveIntQuery membaca integer positif dengan default dan batas atas.
+// maxValue=0 berarti parameter tersebut tidak memiliki batas atas.
 func parsePositiveIntQuery(c *gin.Context, key string, defaultValue, maxValue int) (int, error) {
 	rawValue := c.Query(key)
 	if rawValue == "" {
@@ -173,6 +187,7 @@ func parsePositiveIntQuery(c *gin.Context, key string, defaultValue, maxValue in
 	return value, nil
 }
 
+// writeError menjaga seluruh error API memakai envelope JSON yang konsisten.
 func writeError(c *gin.Context, status int, code, message string, details map[string]string) {
 	errorBody := gin.H{
 		"code":    code,
@@ -188,6 +203,8 @@ func writeError(c *gin.Context, status int, code, message string, details map[st
 	})
 }
 
+// writeInternalError mencatat detail teknis di server tetapi hanya mengirim pesan
+// aman dan generik kepada client.
 func writeInternalError(c *gin.Context, operation, clientMessage string, err error) {
 	log.Printf("%s failed: %v", operation, err)
 	writeError(c, http.StatusInternalServerError, "INTERNAL_ERROR", clientMessage, nil)
