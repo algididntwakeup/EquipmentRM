@@ -1,5 +1,5 @@
 {
-  "name": "takehomet-arm",
+  "name": "frontend",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -22,5 +22,9 @@
     "eslint-config-next": "16.2.12",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "overrides": {
+    "postcss": "8.5.25",
+    "sharp": "0.35.3"
   }
 }
