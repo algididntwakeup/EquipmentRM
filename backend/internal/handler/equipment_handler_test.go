@@ -117,6 +117,27 @@ func TestCreateEquipmentReturnsFieldValidationDetails(t *testing.T) {
 	assert.Contains(t, payload.Error.Details, "status")
 }
 
+func TestCreateEquipmentRejectsFutureInspectionDate(t *testing.T) {
+	repo := &equipmentRepositoryStub{}
+	router := setupEquipmentRouter(repo)
+	body := []byte(`{
+		"nama_equipment":"Future Equipment",
+		"tipe_equipment":"Pressure Vessel",
+		"lokasi":"Plant Area A",
+		"tanggal_inspeksi_terakhir":"2999-01-01",
+		"status":"Aktif"
+	}`)
+	request := httptest.NewRequest(http.MethodPost, "/equipment", bytes.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+
+	router.ServeHTTP(response, request)
+
+	require.Equal(t, http.StatusBadRequest, response.Code)
+	assert.Nil(t, repo.created)
+	assert.Contains(t, response.Body.String(), `"tanggal_inspeksi_terakhir":"Tanggal inspeksi terakhir tidak boleh melewati hari ini"`)
+}
+
 func TestGetAllRejectsInvalidPagination(t *testing.T) {
 	router := setupEquipmentRouter(&equipmentRepositoryStub{})
 	request := httptest.NewRequest(http.MethodGet, "/equipment?page=abc&limit=101", nil)

@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { FormEvent, useState } from 'react';
+import { FormEvent, useEffect, useRef, useState } from 'react';
 import { ApiClientError, getApiErrorMessage } from '@/lib/api';
 import {
   EQUIPMENT_STATUSES,
@@ -36,6 +36,14 @@ const equipmentTypes = [
   'Instrumentation & Control',
 ];
 
+function getLocalToday(): string {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 function validate(values: EquipmentInput): FormErrors {
   const errors: FormErrors = {};
   if (!values.nama_equipment.trim()) errors.nama_equipment = 'Nama equipment wajib diisi';
@@ -43,6 +51,8 @@ function validate(values: EquipmentInput): FormErrors {
   if (!values.lokasi.trim()) errors.lokasi = 'Lokasi wajib diisi';
   if (!values.tanggal_inspeksi_terakhir) {
     errors.tanggal_inspeksi_terakhir = 'Tanggal inspeksi terakhir wajib diisi';
+  } else if (values.tanggal_inspeksi_terakhir > getLocalToday()) {
+    errors.tanggal_inspeksi_terakhir = 'Tanggal inspeksi terakhir tidak boleh melewati hari ini';
   }
   if (!EQUIPMENT_STATUSES.includes(values.status)) {
     errors.status = 'Status equipment tidak valid';
@@ -60,6 +70,15 @@ export default function EquipmentForm({
   const [errors, setErrors] = useState<FormErrors>({});
   const [generalError, setGeneralError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const inspectionDateInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    // Nilai max dipasang setelah hydration agar mengikuti tanggal lokal browser,
+    // bukan timezone mesin yang menjalankan proses build Next.js.
+    if (inspectionDateInput.current) {
+      inspectionDateInput.current.max = getLocalToday();
+    }
+  }, []);
 
   const updateField = <K extends keyof EquipmentInput>(field: K, value: EquipmentInput[K]) => {
     setValues((current) => ({ ...current, [field]: value }));
@@ -173,15 +192,19 @@ export default function EquipmentForm({
             Inspeksi Terakhir <span className="text-error">*</span>
           </label>
           <input
+            ref={inspectionDateInput}
             id="tanggal_inspeksi_terakhir"
             type="date"
             value={values.tanggal_inspeksi_terakhir}
             onChange={(event) => updateField('tanggal_inspeksi_terakhir', event.target.value)}
             aria-invalid={Boolean(errors.tanggal_inspeksi_terakhir)}
-            aria-describedby={errors.tanggal_inspeksi_terakhir ? 'tanggal-error' : undefined}
+            aria-describedby={errors.tanggal_inspeksi_terakhir ? 'tanggal-error tanggal-hint' : 'tanggal-hint'}
             className={fieldClass('tanggal_inspeksi_terakhir')}
           />
           {errors.tanggal_inspeksi_terakhir && <p id="tanggal-error" className="mt-1 text-xs text-error">{errors.tanggal_inspeksi_terakhir}</p>}
+          <p id="tanggal-hint" className="mt-1 text-xs text-on-surface-variant">
+            Maksimal tanggal hari ini; tanggal masa depan akan ditolak.
+          </p>
         </div>
 
         <div>

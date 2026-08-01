@@ -173,7 +173,8 @@ Skenario berikut dapat digunakan oleh HR, reviewer, QA, atau pengguna yang belum
 1. Buka form tambah equipment.
 2. Biarkan kolom wajib kosong lalu coba simpan.
 3. Pastikan aplikasi menampilkan pesan validasi dan tidak membuat data kosong.
-4. Untuk menguji format tanggal yang salah secara langsung ke API, gunakan contoh request invalid pada bagian REST API.
+4. Pilih tanggal inspeksi setelah hari ini. Kalender seharusnya menonaktifkan tanggal tersebut; jika dikirim langsung ke API, backend tetap menolaknya.
+5. Untuk menguji format tanggal yang salah secara langsung ke API, gunakan contoh request invalid pada bagian REST API.
 
 ## Menghentikan, melanjutkan, dan mereset aplikasi
 
@@ -352,7 +353,7 @@ Alur startup Docker Compose adalah `db -> migrate -> api -> web`. API baru start
 | `nama_equipment` | string | Wajib, kolom database maksimal 150 karakter |
 | `tipe_equipment` | string | Wajib, kolom database maksimal 100 karakter |
 | `lokasi` | string | Wajib, kolom database maksimal 150 karakter |
-| `tanggal_inspeksi_terakhir` | date | Wajib, format tanggal valid `YYYY-MM-DD` |
+| `tanggal_inspeksi_terakhir` | date | Wajib, format `YYYY-MM-DD`, maksimal tanggal hari ini |
 | `status` | enum | Wajib; `Aktif`, `Dalam Perbaikan`, atau `Non-Aktif` |
 | `created_at` | timestamp | Dibuat otomatis |
 | `updated_at` | timestamp | Diperbarui otomatis |

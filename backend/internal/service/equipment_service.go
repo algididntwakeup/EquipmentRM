@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"reksolindo-api/internal/model"
@@ -25,6 +26,10 @@ var allowedStatuses = map[string]struct{}{
 	"Non-Aktif":       {},
 }
 
+// Validasi "hari ini" mengikuti zona waktu bisnis WIB (UTC+7), sesuai lokasi
+// penggunaan aplikasi, agar batas tanggal konsisten ketika API berjalan di Docker.
+var businessTimeZone = time.FixedZone("WIB", 7*60*60)
+
 // EquipmentService mendefinisikan seluruh use case equipment. Handler hanya
 // bergantung pada kontrak ini, bukan pada implementasi database.
 type EquipmentService interface {
@@ -37,11 +42,12 @@ type EquipmentService interface {
 
 type equipmentService struct {
 	repo repository.EquipmentRepository
+	now  func() time.Time
 }
 
 // NewEquipmentService membuat service dengan repository yang diberikan.
 func NewEquipmentService(repo repository.EquipmentRepository) EquipmentService {
-	return &equipmentService{repo: repo}
+	return &equipmentService{repo: repo, now: time.Now}
 }
 
 // ValidateInput memusatkan aturan bisnis create/update sehingga validasi yang
@@ -66,6 +72,10 @@ func (s *equipmentService) ValidateInput(input model.EquipmentInput) (model.Date
 		t, err := model.ParseDate(strings.TrimSpace(input.TanggalInspeksiTerakhir))
 		if err != nil {
 			valErrors["tanggal_inspeksi_terakhir"] = "Format tanggal harus YYYY-MM-DD"
+		} else if t.Time.After(s.today()) {
+			// Batas ini tetap diberlakukan di backend karena atribut max pada form
+			// browser dapat dilewati dengan request API langsung.
+			valErrors["tanggal_inspeksi_terakhir"] = "Tanggal inspeksi terakhir tidak boleh melewati hari ini"
 		} else {
 			parsedDate = t
 		}
@@ -79,6 +89,17 @@ func (s *equipmentService) ValidateInput(input model.EquipmentInput) (model.Date
 	}
 
 	return parsedDate, valErrors
+}
+
+// today menghasilkan awal tanggal hari ini dalam UTC agar dapat dibandingkan
+// langsung dengan model.Date, setelah kalender bisnis ditentukan dalam WIB.
+func (s *equipmentService) today() time.Time {
+	now := time.Now
+	if s.now != nil {
+		now = s.now
+	}
+	current := now().In(businessTimeZone)
+	return time.Date(current.Year(), current.Month(), current.Day(), 0, 0, 0, 0, time.UTC)
 }
 
 // Create memvalidasi payload, membersihkan whitespace, membuat UUID, lalu
